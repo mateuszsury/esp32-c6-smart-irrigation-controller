@@ -1,0 +1,10 @@
+ESP32-C6 Smart Irrigation Controller
+
+Copyright (c) 2026 Mateusz Sury
+
+This repository contains original firmware, host tests, documentation, and a
+Zigbee2MQTT external converter for an ESP32-C6 irrigation controller.
+
+Third-party components are not vendored in this repository. ESP-IDF and
+Espressif-managed components are resolved by ESP-IDF and the ESP-IDF Component
+Manager during development/builds and remain governed by their own licenses.

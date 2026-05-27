@@ -1,0 +1,10 @@
+menu "Irrigation Zigbee"
+
+    config IRRIGATION_ENABLE_ZIGBEE_SDK
+        bool "Enable ESP Zigbee SDK integration"
+        default n
+        help
+            This project ships with a safe Zigbee mode skeleton. Enable this
+            only after adding ESP Zigbee SDK components to the project.
+
+endmenu

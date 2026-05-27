@@ -1,0 +1,5 @@
+menu "Irrigation MQTT"
+
+    comment "Wi-Fi and MQTT settings are configured at runtime from the control panel and saved in NVS."
+
+endmenu

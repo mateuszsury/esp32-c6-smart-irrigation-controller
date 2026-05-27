@@ -1,0 +1,42 @@
+# ESP-IDF build output
+build/
+build-*/
+
+# ESP-IDF generated local configuration. Keep sdkconfig.defaults in git.
+sdkconfig
+sdkconfig.old
+
+# ESP-IDF component manager downloads
+managed_components/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+secrets/
+credentials/
+*.key
+*.pem
+*.crt
+*.p12
+
+# OS files
+Thumbs.db
+.DS_Store
