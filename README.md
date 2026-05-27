@@ -330,20 +330,6 @@ Recommended hardware checks before connecting valves:
 9. Restart the ESP32-C6 while a test output is ON and confirm boot returns all outputs to OFF.
 10. Run a 24-72 hour soak test on final power and relay hardware.
 
-## Repository Hygiene
-
-Do not commit runtime credentials. Wi-Fi passwords, MQTT passwords, and broker
-credentials are stored in device NVS only after configuration. They are not
-required in source files, build files, or examples.
-
-Ignored local files include:
-
-- `build/`,
-- `managed_components/`,
-- `.venv/`,
-- `.idea/`,
-- generated `sdkconfig`,
-- local logs and temporary files.
 
 ## License
 
