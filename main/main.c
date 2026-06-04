@@ -6,6 +6,7 @@
 #include "control_panel.h"
 #include "diag.h"
 #include "driver/gpio.h"
+#include "esp_coexist.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
@@ -26,6 +27,7 @@ static const char *TAG = "main";
 static irrigation_core_t s_core;
 static QueueHandle_t s_controller_queue;
 static irrigation_config_t s_boot_config;
+static bool s_mqtt_started;
 
 static void publish_controller_state(void)
 {
@@ -243,14 +245,57 @@ static void controller_task(void *arg)
     }
 }
 
+static void mqtt_start_task(void *arg)
+{
+    (void)arg;
+    while (!s_mqtt_started) {
+        if (control_panel_wait_for_wifi(pdMS_TO_TICKS(5000))) {
+            esp_err_t err = mqtt_mode_start(&s_core.config, s_controller_queue);
+            if (err == ESP_OK) {
+                s_mqtt_started = true;
+                ESP_LOGI(TAG, "MQTT service started after Wi-Fi connection");
+                break;
+            }
+            ESP_LOGE(TAG, "MQTT start failed: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGW(TAG, "waiting for Wi-Fi before starting MQTT");
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+    vTaskDelete(NULL);
+}
+
+static void zigbee_parallel_start_task(void *arg)
+{
+    (void)arg;
+    while (!s_mqtt_started) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    esp_err_t coex_err = esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+    if (coex_err != ESP_OK) {
+        ESP_LOGW(TAG, "failed to set Wi-Fi coexistence preference: %s", esp_err_to_name(coex_err));
+    }
+
+    esp_err_t err = zigbee_mode_start(&s_core.config, s_controller_queue);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Zigbee router started in parallel with MQTT mode");
+    } else {
+        ESP_LOGE(TAG, "parallel Zigbee router start failed: %s", esp_err_to_name(err));
+    }
+    vTaskDelete(NULL);
+}
+
 static void log_boot_state(const irrigation_config_t *config)
 {
-    ESP_LOGI(TAG, "firmware=%s reset_reason=%d mode=%s lines=%u interlock=%s",
+    ESP_LOGI(TAG, "firmware=%s reset_reason=%d mode=%s lines=%u interlock=%s zigbee_router_with_mqtt=%s mqtt_device_id=%s",
              IRRIGATION_FIRMWARE_VERSION,
              (int)esp_reset_reason(),
              irrigation_mode_to_string(config->mode),
              config->line_count,
-             config->interlock ? "true" : "false");
+             config->interlock ? "true" : "false",
+             config->zigbee_router_with_mqtt ? "true" : "false",
+             config->mqtt_device_id[0] ? config->mqtt_device_id : "auto");
     for (uint8_t i = 0; i < config->line_count; ++i) {
         ESP_LOGI(TAG, "line %u name=%s gpio=%d active_high=%s enabled=%s duration=%" PRIu32,
                  i + 1,
@@ -300,22 +345,13 @@ void app_main(void)
     xTaskCreate(status_led_task, "status_led_policy", 2048, NULL, 4, NULL);
 
     esp_err_t comm_err = ESP_OK;
-    esp_err_t mqtt_err = ESP_OK;
     esp_err_t zigbee_err = ESP_OK;
     if (s_boot_config.mode == IRRIGATION_MODE_MQTT) {
-        if (control_panel_wait_for_wifi(pdMS_TO_TICKS(15000))) {
-            mqtt_err = mqtt_mode_start(&s_core.config, s_controller_queue);
-        } else {
-            ESP_LOGW(TAG, "Wi-Fi is not connected; MQTT will stay disabled until network settings are saved from the control panel");
-            mqtt_err = ESP_ERR_TIMEOUT;
-        }
+        xTaskCreate(mqtt_start_task, "mqtt_start", 4096, NULL, 5, NULL);
         if (s_core.config.zigbee_router_with_mqtt) {
-            zigbee_err = zigbee_mode_start(&s_core.config, s_controller_queue);
-            if (zigbee_err == ESP_OK) {
-                ESP_LOGI(TAG, "Zigbee router started in parallel with MQTT mode");
-            }
+            xTaskCreate(zigbee_parallel_start_task, "zigbee_parallel_start", 4096, NULL, 4, NULL);
         }
-        comm_err = mqtt_err != ESP_OK ? mqtt_err : zigbee_err;
+        comm_err = zigbee_err;
     } else {
         zigbee_err = zigbee_mode_start(&s_core.config, s_controller_queue);
         comm_err = zigbee_err;

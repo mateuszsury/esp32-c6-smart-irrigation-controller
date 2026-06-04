@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define IRRIGATION_SCHEMA_VERSION 5
+#define IRRIGATION_SCHEMA_VERSION 6
 
 static void set_error(irrigation_core_t *core, const char *message)
 {
@@ -39,6 +39,22 @@ static bool relay_gpio_is_restricted(int gpio)
         default:
             return false;
     }
+}
+
+static bool mqtt_device_id_is_valid(const char *device_id)
+{
+    if (device_id == NULL || device_id[0] == '\0') {
+        return true;
+    }
+    for (const char *p = device_id; *p != '\0'; ++p) {
+        bool digit = *p >= '0' && *p <= '9';
+        bool lower = *p >= 'a' && *p <= 'z';
+        bool upper = *p >= 'A' && *p <= 'Z';
+        if (!digit && !lower && !upper && *p != '_' && *p != '-') {
+            return false;
+        }
+    }
+    return true;
 }
 
 const char *irrigation_mode_to_string(irrigation_comm_mode_t mode)
@@ -108,6 +124,12 @@ irrigation_result_t irrigation_config_validate(const irrigation_config_t *config
     if (config->mqtt_prefix[0] == '\0') {
         if (error != NULL && error_len > 0) {
             snprintf(error, error_len, "mqtt_prefix must not be empty");
+        }
+        return IRRIGATION_ERR_INVALID_CONFIG;
+    }
+    if (!mqtt_device_id_is_valid(config->mqtt_device_id)) {
+        if (error != NULL && error_len > 0) {
+            snprintf(error, error_len, "mqtt_device_id contains invalid characters");
         }
         return IRRIGATION_ERR_INVALID_CONFIG;
     }
