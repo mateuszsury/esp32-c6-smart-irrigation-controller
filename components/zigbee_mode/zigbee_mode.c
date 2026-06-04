@@ -38,6 +38,7 @@ typedef struct {
     bool interlock_attr;
     uint8_t line_count_attr;
     bool started;
+    volatile bool joined;
 } zigbee_mode_ctx_t;
 
 static zigbee_mode_ctx_t s_zigbee;
@@ -80,6 +81,7 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *signal)
     case EZB_BDB_SIGNAL_DEVICE_FIRST_START:
     case EZB_BDB_SIGNAL_DEVICE_REBOOT:
         ESP_LOGI(TAG, "Zigbee device startup signal status=%u", status);
+        s_zigbee.joined = false;
         if (status == EZB_BDB_STATUS_SUCCESS) {
             start_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
         }
@@ -87,12 +89,14 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *signal)
 
     case EZB_BDB_SIGNAL_STEERING:
         if (status == EZB_BDB_STATUS_SUCCESS) {
+            s_zigbee.joined = true;
             ESP_LOGI(TAG,
                      "Zigbee joined network: PAN=0x%04hx channel=%u short=0x%04hx",
                      ezb_get_panid(),
                      ezb_get_current_channel(),
                      ezb_get_short_address());
         } else {
+            s_zigbee.joined = false;
             ESP_LOGW(TAG, "Zigbee steering failed status=%u, retrying", status);
             start_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
         }
@@ -600,4 +604,9 @@ void zigbee_mode_publish_state(const irrigation_core_t *core)
             &s_zigbee.schedule_weekdays_attrs[i],
             false);
     }
+}
+
+bool zigbee_mode_is_joined(void)
+{
+    return s_zigbee.started && s_zigbee.joined;
 }

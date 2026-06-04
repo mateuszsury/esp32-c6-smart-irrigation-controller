@@ -11,6 +11,7 @@ extern "C" {
 
 esp_err_t zigbee_mode_start(const irrigation_config_t *config, QueueHandle_t controller_queue);
 void zigbee_mode_publish_state(const irrigation_core_t *core);
+bool zigbee_mode_is_joined(void);
 
 #ifdef __cplusplus
 }

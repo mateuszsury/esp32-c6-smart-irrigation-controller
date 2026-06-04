@@ -39,10 +39,10 @@ static void status_led_task(void *arg)
 {
     (void)arg;
     while (true) {
-        if (!control_panel_wifi_connected()) {
+        if (s_core.config.mode == IRRIGATION_MODE_ZIGBEE) {
+            status_led_set_pattern(zigbee_mode_is_joined() ? STATUS_LED_PATTERN_ZIGBEE_GREEN : STATUS_LED_PATTERN_CONNECTING_YELLOW);
+        } else if (!control_panel_wifi_connected()) {
             status_led_set_pattern(control_panel_ap_active() ? STATUS_LED_PATTERN_PORTAL_YELLOW : STATUS_LED_PATTERN_CONNECTING_YELLOW);
-        } else if (s_core.config.mode == IRRIGATION_MODE_ZIGBEE) {
-            status_led_set_pattern(STATUS_LED_PATTERN_ZIGBEE_GREEN);
         } else {
             status_led_set_pattern(STATUS_LED_PATTERN_MQTT_BLUE);
         }
