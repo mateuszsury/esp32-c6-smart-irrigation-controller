@@ -232,11 +232,14 @@ static esp_err_t root_get_handler(httpd_req_t *req)
              "<div><label>MQTT URI</label><input name='mqtt_uri' value='%s' placeholder='mqtt://192.168.1.10:1883'></div>"
              "<div><label>MQTT username</label><input name='mqtt_username' value='%s'></div>"
              "<div><label>MQTT password</label><input name='mqtt_password' type='password' placeholder='leave blank to keep'></div>"
-             "<div><label>MQTT prefix</label><input name='mqtt_prefix' value='%s'></div></div><p><button>Save and reboot</button></p></form></section>",
+             "<div><label>MQTT prefix</label><input name='mqtt_prefix' value='%s'></div>"
+             "<div><label>MQTT device ID</label><input name='mqtt_device_id' value='%s' placeholder='auto from MAC'></div>"
+             "</div><p><button>Save and reboot</button></p></form></section>",
              core->config.wifi_ssid,
              core->config.mqtt_uri,
              core->config.mqtt_username,
-             core->config.mqtt_prefix);
+             core->config.mqtt_prefix,
+             core->config.mqtt_device_id);
     httpd_resp_sendstr_chunk(req, chunk);
 
     snprintf(chunk, sizeof(chunk),
@@ -332,6 +335,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "ap_active", control_panel_ap_active());
     cJSON_AddBoolToObject(root, "interlock", core->config.interlock);
     cJSON_AddBoolToObject(root, "zigbee_router_with_mqtt", core->config.zigbee_router_with_mqtt);
+    cJSON_AddStringToObject(root, "mqtt_device_id", core->config.mqtt_device_id);
     cJSON_AddStringToObject(root, "last_error", core->last_error);
     cJSON *ota = cJSON_AddObjectToObject(root, "ota");
     cJSON_AddStringToObject(ota, "status", ota_update_status());
@@ -466,7 +470,7 @@ static esp_err_t all_off_post_handler(httpd_req_t *req)
 
 static esp_err_t network_post_handler(httpd_req_t *req)
 {
-    char body[512];
+    char body[768];
     char value[160];
     irrigation_config_t *config = calloc(1, sizeof(*config));
     if (config == NULL) {
@@ -494,6 +498,9 @@ static esp_err_t network_post_handler(httpd_req_t *req)
     }
     if (form_value(body, "mqtt_prefix", value, sizeof(value)) && value[0] != '\0') {
         copy_trunc(config->mqtt_prefix, sizeof(config->mqtt_prefix), value);
+    }
+    if (form_value(body, "mqtt_device_id", value, sizeof(value))) {
+        copy_trunc(config->mqtt_device_id, sizeof(config->mqtt_device_id), value);
     }
     esp_err_t save_err = config_store_save(config);
     free(config);
@@ -722,13 +729,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGW(TAG, "Wi-Fi STA disconnected reason=%u, retry=%u", event != NULL ? event->reason : 0, s_panel.retry_count);
         xEventGroupClearBits(s_panel.wifi_events, WIFI_CONNECTED_BIT);
-        if (s_panel.retry_count++ < 10) {
-            esp_wifi_connect();
-        } else {
+        if (s_panel.retry_count++ >= 10) {
             xEventGroupSetBits(s_panel.wifi_events, WIFI_FAIL_BIT);
             start_ap();
+            s_panel.retry_count = 10;
         }
+        esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         s_panel.retry_count = 0;
@@ -765,6 +774,13 @@ static esp_err_t wifi_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    wifi_country_t country = {
+        .cc = "PL",
+        .schan = 1,
+        .nchan = 13,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL,
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_country(&country));
     if (s_panel.core->config.wifi_ssid[0] != '\0') {
         wifi_config_t sta_config = {0};
         copy_trunc((char *)sta_config.sta.ssid, sizeof(sta_config.sta.ssid), s_panel.core->config.wifi_ssid);
@@ -772,6 +788,7 @@ static esp_err_t wifi_start(void)
         sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     } else {
         start_ap();
     }

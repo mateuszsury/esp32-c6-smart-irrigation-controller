@@ -20,7 +20,7 @@ typedef struct {
     irrigation_config_t config;
     QueueHandle_t queue;
     esp_mqtt_client_handle_t client;
-    char device_id[24];
+    char device_id[32];
     char base_topic[96];
     char availability_topic[128];
     bool connected;
@@ -582,9 +582,13 @@ esp_err_t mqtt_mode_start(const irrigation_config_t *config, QueueHandle_t contr
     s_mqtt.config = *config;
     s_mqtt.queue = controller_queue;
 
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    snprintf(s_mqtt.device_id, sizeof(s_mqtt.device_id), "irrigation_%02x%02x%02x", mac[3], mac[4], mac[5]);
+    if (config->mqtt_device_id[0] != '\0') {
+        snprintf(s_mqtt.device_id, sizeof(s_mqtt.device_id), "%s", config->mqtt_device_id);
+    } else {
+        uint8_t mac[6] = {0};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        snprintf(s_mqtt.device_id, sizeof(s_mqtt.device_id), "irrigation_%02x%02x%02x", mac[3], mac[4], mac[5]);
+    }
     snprintf(s_mqtt.availability_topic, sizeof(s_mqtt.availability_topic), "%s/%s/availability", s_mqtt.config.mqtt_prefix, s_mqtt.device_id);
 
     esp_mqtt_client_config_t mqtt_cfg = {

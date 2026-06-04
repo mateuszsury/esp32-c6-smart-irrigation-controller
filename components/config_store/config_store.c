@@ -35,10 +35,31 @@ typedef struct {
 } irrigation_config_v3_t;
 
 typedef struct {
+    uint32_t schema_version;
+    irrigation_comm_mode_t mode;
+    bool interlock;
+    bool zigbee_router_with_mqtt;
+    char wifi_ssid[33];
+    char wifi_password[65];
+    char mqtt_uri[128];
+    char mqtt_username[65];
+    char mqtt_password[65];
+    char mqtt_prefix[48];
+    uint8_t line_count;
+    irrigation_line_config_t lines[IRRIGATION_MAX_LINES];
+} irrigation_config_v5_t;
+
+typedef struct {
     uint32_t magic;
     uint32_t crc;
     irrigation_config_v3_t config;
 } stored_config_v3_t;
+
+typedef struct {
+    uint32_t magic;
+    uint32_t crc;
+    irrigation_config_v5_t config;
+} stored_config_v5_t;
 
 static uint32_t fnv1a32(const void *data, size_t len)
 {
@@ -76,6 +97,22 @@ static void import_v3_config(irrigation_config_t *dst, const irrigation_config_v
     dst->mode = src->mode;
     dst->interlock = src->interlock;
     dst->zigbee_router_with_mqtt = IRRIGATION_DEFAULT_ZIGBEE_ROUTER_WITH_MQTT;
+    memcpy(dst->wifi_ssid, src->wifi_ssid, sizeof(dst->wifi_ssid));
+    memcpy(dst->wifi_password, src->wifi_password, sizeof(dst->wifi_password));
+    memcpy(dst->mqtt_uri, src->mqtt_uri, sizeof(dst->mqtt_uri));
+    memcpy(dst->mqtt_username, src->mqtt_username, sizeof(dst->mqtt_username));
+    memcpy(dst->mqtt_password, src->mqtt_password, sizeof(dst->mqtt_password));
+    memcpy(dst->mqtt_prefix, src->mqtt_prefix, sizeof(dst->mqtt_prefix));
+    dst->line_count = src->line_count;
+    memcpy(dst->lines, src->lines, sizeof(dst->lines));
+}
+
+static void import_v5_config(irrigation_config_t *dst, const irrigation_config_v5_t *src)
+{
+    irrigation_config_defaults(dst);
+    dst->mode = src->mode;
+    dst->interlock = src->interlock;
+    dst->zigbee_router_with_mqtt = src->zigbee_router_with_mqtt;
     memcpy(dst->wifi_ssid, src->wifi_ssid, sizeof(dst->wifi_ssid));
     memcpy(dst->wifi_password, src->wifi_password, sizeof(dst->wifi_password));
     memcpy(dst->mqtt_uri, src->mqtt_uri, sizeof(dst->mqtt_uri));
@@ -129,6 +166,41 @@ esp_err_t config_store_load(irrigation_config_t *config)
     }
 
     char validation_error[96] = {0};
+
+    if (required == sizeof(stored_config_v5_t)) {
+        stored_config_v5_t stored_v5 = {0};
+        err = nvs_get_blob(handle, CONFIG_BLOB_KEY, &stored_v5, &required);
+        nvs_close(handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "legacy NVS blob read failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        uint32_t crc = fnv1a32(&stored_v5.config, sizeof(stored_v5.config));
+        if (stored_v5.magic != CONFIG_MAGIC || stored_v5.crc != crc || stored_v5.config.schema_version != 5U) {
+            ESP_LOGE(TAG, "schema 5 stored config invalid, using defaults");
+            irrigation_config_defaults(config);
+            return ESP_ERR_INVALID_CRC;
+        }
+        import_v5_config(config, &stored_v5.config);
+        bool migrated = migrate_config(config);
+        if (irrigation_config_validate(config, validation_error, sizeof(validation_error)) != IRRIGATION_OK) {
+            ESP_LOGE(TAG, "schema 5 stored config invalid after migration (%s), using defaults", validation_error);
+            irrigation_config_defaults(config);
+            return ESP_ERR_INVALID_CRC;
+        }
+        ESP_LOGW(TAG, "migrated NVS config schema 5 -> 6; mqtt_device_id=%s",
+                 config->mqtt_device_id[0] ? config->mqtt_device_id : "auto");
+        esp_err_t save_err = config_store_save(config);
+        if (save_err != ESP_OK) {
+            ESP_LOGE(TAG, "failed to persist schema migration: %s", esp_err_to_name(save_err));
+        }
+        ESP_LOGI(TAG, "loaded config: mode=%s lines=%u interlock=%s",
+                 irrigation_mode_to_string(config->mode),
+                 config->line_count,
+                 config->interlock ? "true" : "false");
+        (void)migrated;
+        return ESP_OK;
+    }
 
     if (required != sizeof(stored_config_t)) {
         nvs_close(handle);

@@ -77,6 +77,7 @@ typedef struct {
     char mqtt_username[65];
     char mqtt_password[65];
     char mqtt_prefix[48];
+    char mqtt_device_id[32];
     uint8_t line_count;
     irrigation_line_config_t lines[IRRIGATION_MAX_LINES];
 } irrigation_config_t;

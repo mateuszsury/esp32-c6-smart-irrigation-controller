@@ -30,11 +30,12 @@ static void print_status(const irrigation_core_t *core)
     if (core == NULL) {
         return;
     }
-    printf("\nmode=%s firmware=%s reset_reason=%d interlock=%s last_error=%s\n",
+    printf("\nmode=%s firmware=%s reset_reason=%d interlock=%s mqtt_device_id=%s last_error=%s\n",
            irrigation_mode_to_string(core->config.mode),
            IRRIGATION_FIRMWARE_VERSION,
            (int)esp_reset_reason(),
            core->config.interlock ? "true" : "false",
+           core->config.mqtt_device_id[0] ? core->config.mqtt_device_id : "auto",
            core->last_error);
     for (uint8_t i = 0; i < core->config.line_count; ++i) {
         printf("line_%u name=%s gpio=%d enabled=%s state=%s duration=%" PRIu32 "\n",
@@ -60,7 +61,7 @@ static void diag_task(void *arg)
 {
     diag_ctx_t *ctx = (diag_ctx_t *)arg;
     char line[256];
-    printf("\nIrrigation diag console. Commands: status, off, on <n>, lineoff <n>, wifi <ssid> <password>, mqtt <uri> <user> <password> [prefix], mode mqtt|zigbee, reset-config\n");
+    printf("\nIrrigation diag console. Commands: status, off, on <n>, lineoff <n>, wifi <ssid> <password>, mqtt <uri> <user> <password> [prefix], device-id <id|auto>, mode mqtt|zigbee, zigbee-router on|off, reset-config\n");
     while (true) {
         printf("> ");
         fflush(stdout);
@@ -145,6 +146,29 @@ static void diag_task(void *arg)
             } else {
                 printf("usage: mqtt <uri> <user> <password> [prefix]\n");
             }
+        } else if (strncmp(line, "device-id ", 10) == 0) {
+            char device_id[32] = {0};
+            if (sscanf(line + 10, "%31s", device_id) == 1) {
+                irrigation_config_t *config = config_copy_from_core(ctx->core);
+                if (config == NULL) {
+                    ESP_LOGE(TAG, "cannot update device id without core state");
+                    continue;
+                }
+                if (strcmp(device_id, "auto") == 0) {
+                    config->mqtt_device_id[0] = '\0';
+                } else {
+                    snprintf(config->mqtt_device_id, sizeof(config->mqtt_device_id), "%s", device_id);
+                }
+                ESP_LOGW(TAG, "MQTT device id update requested from UART: %s",
+                         config->mqtt_device_id[0] ? config->mqtt_device_id : "auto");
+                if (config_store_save(config) == ESP_OK) {
+                    esp_restart();
+                } else {
+                    ESP_LOGE(TAG, "failed to save MQTT device id");
+                }
+            } else {
+                printf("usage: device-id <id|auto>\n");
+            }
         } else if (strncmp(line, "mode mqtt", 9) == 0 || strncmp(line, "mode zigbee", 11) == 0) {
             irrigation_config_t *config = config_copy_from_core(ctx->core);
             if (config == NULL) {
@@ -162,6 +186,29 @@ static void diag_task(void *arg)
                 esp_restart();
             } else {
                 ESP_LOGE(TAG, "failed to save mode change");
+            }
+        } else if (strncmp(line, "zigbee-router ", 14) == 0) {
+            irrigation_config_t *config = config_copy_from_core(ctx->core);
+            if (config == NULL) {
+                ESP_LOGE(TAG, "cannot update Zigbee router option without core state");
+                continue;
+            }
+            if (strncmp(line + 14, "on", 2) == 0) {
+                config->zigbee_router_with_mqtt = true;
+            } else if (strncmp(line + 14, "off", 3) == 0) {
+                config->zigbee_router_with_mqtt = false;
+            } else {
+                free(config);
+                printf("usage: zigbee-router on|off\n");
+                continue;
+            }
+            ESP_LOGW(TAG,
+                     "parallel Zigbee router in MQTT mode update requested from UART: %s",
+                     config->zigbee_router_with_mqtt ? "on" : "off");
+            if (config_store_save(config) == ESP_OK) {
+                esp_restart();
+            } else {
+                ESP_LOGE(TAG, "failed to save Zigbee router option");
             }
         } else if (strncmp(line, "reset-config", 12) == 0) {
             ESP_LOGW(TAG, "factory reset requested from UART");
