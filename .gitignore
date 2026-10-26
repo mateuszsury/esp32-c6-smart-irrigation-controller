@@ -40,3 +40,9 @@ credentials/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Generated development files
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
