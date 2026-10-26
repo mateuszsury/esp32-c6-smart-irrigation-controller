@@ -6,6 +6,10 @@ all valve decisions in one deterministic controller core.
 
 Author and maintainer: Mateusz Sury
 
+CI runs the host controller checks and compiles the ESP32-C6 firmware with
+ESP-IDF 5.3.2, matching `dependencies.lock`. A successful compile does not replace
+the relay-board and valve tests described below.
+
 ## Features
 
 - ESP32-C6 target with ESP-IDF.
