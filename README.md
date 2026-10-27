@@ -10,6 +10,14 @@ CI runs the host controller checks and compiles the ESP32-C6 firmware with
 ESP-IDF 5.3.2, matching `dependencies.lock`. A successful compile does not replace
 the relay-board and valve tests described below.
 
+## Project overview
+
+ESP-IDF firmware for timed irrigation zones, local interlock and MQTT or Zigbee control.
+
+![ESP32-C6 Irrigation Controller — Control ownership: command sources submit events; only the controller core owns valve decisions. Final relay-board tests remain necessary.](docs/assets/presentation/overview.svg)
+
+Control ownership: command sources submit events; only the controller core owns valve decisions. Final relay-board tests remain necessary.
+
 ## Features
 
 - ESP32-C6 target with ESP-IDF.
